@@ -1,0 +1,65 @@
+# Stadium Booker 설정 파일
+# 환경변수는 ${VAR_NAME} 형식으로 참조합니다.
+
+credentials:
+  # 사이트별 로그인 정보 (.env에서 참조)
+  yangju:
+    id: ${YANGJU_ID}
+    password: ${YANGJU_PW}
+
+reservations:
+  - name: "양주 풋살"
+    site: "yangju"                  # 사이트 어댑터 이름
+    facility: "풋살장"               # 시설 이름
+    court: "고덕풋살장"              # 구장 이름
+    preferred_slots:                # 우선순위 순서
+      - day: "wednesday"
+        time: "20:00-21:00"
+      - day: "wednesday"
+        time: "21:00-22:00"
+    multi_slot: true                # 여러 시간대 동시 선택
+    prelogin_minutes: 5             # 오픈 전 사전 로그인 (분)
+    open_schedule:                  # 예약 오픈 시간
+      type: "weekly"               # monthly | weekly | daily
+      day_of_week: "thursday"      # 매주 목요일
+      time: "13:00:00"             # 13:00
+    retry:
+      max_attempts: 3
+      delay_ms: 500
+    form:                           # 예약 폼 정보 (선택)
+      event_name: "어썸FC 정기운동"
+      purpose: "풋살 훈련"
+      headcount: 15
+
+  # - name: "평일 축구"
+  #   site: "yangju"
+  #   facility: "수원종합운동장"
+  #   court: "축구장 B"
+  #   preferred_slots:
+  #     - day: "wednesday"
+  #       time: "20:00-22:00"
+  #   open_schedule:
+  #     type: "weekly"
+  #     day_of_week: "monday"       # 매주 월요일 (weekly일 때)
+  #     time: "09:00:00"
+
+captcha:
+  primary: "tesseract"              # tesseract
+  tesseract:
+    lang: "eng"                     # OCR 언어
+    confidence_threshold: 70        # 이 이하면 수동 입력
+  manual_fallback: true             # OCR 실패 시 수동 입력
+
+notification:
+  kakao:
+    enabled: true
+    on_success: true                # 예약 성공 시
+    on_failure: true                # 예약 실패 시
+    on_cart_added: true             # 바구니 담김 알림
+    mypage_url: "https://reserve.yjuc.or.kr/main/mypage"  # 결제 링크
+
+browser:
+  headless: true                    # 디버깅 시 false
+  block_images: false               # CAPTCHA 이미지 필요
+  block_css: true
+  timeout_ms: 30000

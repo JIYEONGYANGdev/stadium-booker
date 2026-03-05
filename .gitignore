@@ -1,0 +1,9 @@
+node_modules/
+dist/
+logs/
+screenshots/
+.env
+config/config.yaml
+config/.cookies-*.json
+config/kakao.tokens.json
+*.tsbuildinfo

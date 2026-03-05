@@ -1,0 +1,119 @@
+import type { Page } from 'playwright';
+import type { CaptchaConfig } from '../config/schema.js';
+import { recognizeWithTesseract, TesseractLowConfidenceError } from './tesseract.js';
+import { saveScreenshot } from '../utils/browser.js';
+import { logger } from '../utils/logger.js';
+import { createInterface } from 'node:readline/promises';
+import { stdin as input, stdout as output } from 'node:process';
+
+const DEFAULT_CAPTCHA_CONFIG: CaptchaConfig = {
+  primary: 'tesseract',
+  tesseract: {
+    lang: 'eng',
+    confidence_threshold: 70,
+  },
+  manual_fallback: true,
+};
+
+export async function solveCaptcha(
+  page: Page,
+  captchaSelector: string,
+  config?: CaptchaConfig,
+): Promise<string> {
+  const cfg = { ...DEFAULT_CAPTCHA_CONFIG, ...config };
+
+  logger.info('CAPTCHA 이미지 캡처 중...');
+  const captchaElement = page.locator(captchaSelector);
+  const imageBuffer = await captchaElement.screenshot();
+
+  await saveScreenshot(page, 'captcha');
+
+  // 1차: Primary 엔진
+  try {
+    const result = await recognize(imageBuffer, cfg.primary, cfg);
+    logger.info(`CAPTCHA 해결 (${cfg.primary}): "${result}"`);
+    return result;
+  } catch (error) {
+    if (error instanceof TesseractLowConfidenceError) {
+      logger.warn(`${cfg.primary} 실패: ${error.message}`);
+    } else {
+      logger.error(`${cfg.primary} 오류:`, error);
+    }
+  }
+
+  // 2차: Fallback 엔진
+  if (cfg.fallback) {
+    logger.info(`폴백 엔진 (${cfg.fallback}) 시도...`);
+    try {
+      const result = await recognize(imageBuffer, cfg.fallback, cfg);
+      logger.info(`CAPTCHA 해결 (${cfg.fallback}): "${result}"`);
+      return result;
+    } catch (error) {
+      logger.error(`${cfg.fallback} 오류:`, error);
+    }
+  }
+
+  if (cfg.manual_fallback !== false) {
+    const manual = await promptManualCaptcha();
+    if (manual) {
+      logger.info('수동 CAPTCHA 입력 사용');
+      return manual;
+    }
+  }
+
+  throw new Error('CAPTCHA 해결 실패: 모든 엔진에서 실패했습니다.');
+}
+
+async function recognize(
+  imageBuffer: Buffer,
+  engine: 'tesseract',
+  config: CaptchaConfig,
+): Promise<string> {
+  switch (engine) {
+    case 'tesseract': {
+      const result = await recognizeWithTesseract(
+        imageBuffer,
+        config.tesseract?.lang ?? 'eng',
+        config.tesseract?.confidence_threshold ?? 70,
+      );
+      return result.text;
+    }
+  }
+}
+
+export async function solveCaptchaFromBuffer(
+  imageBuffer: Buffer,
+  config?: CaptchaConfig,
+): Promise<string> {
+  const cfg = { ...DEFAULT_CAPTCHA_CONFIG, ...config };
+
+  try {
+    return await recognize(imageBuffer, cfg.primary, cfg);
+  } catch {
+    if (cfg.fallback) {
+      try {
+        return await recognize(imageBuffer, cfg.fallback, cfg);
+      } catch {
+        // ignore
+      }
+    }
+    if (cfg.manual_fallback !== false) {
+      const manual = await promptManualCaptcha();
+      if (manual) return manual;
+    }
+    throw new Error('CAPTCHA 해결 실패');
+  }
+}
+
+async function promptManualCaptcha(): Promise<string | null> {
+  if (!process.stdin.isTTY) return null;
+
+  const rl = createInterface({ input, output });
+  try {
+    const answer = await rl.question('CAPTCHA 수동 입력: ');
+    const cleaned = answer.trim().replace(/\s/g, '');
+    return cleaned.length > 0 ? cleaned : null;
+  } finally {
+    rl.close();
+  }
+}
