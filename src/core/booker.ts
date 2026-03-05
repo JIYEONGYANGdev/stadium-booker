@@ -159,6 +159,7 @@ export class Booker {
         await site.navigateToReservation(page, {
           facility: reservation.facility,
           court: reservation.court,
+          date: reservation.target_date,
         });
 
         // 약관 동의

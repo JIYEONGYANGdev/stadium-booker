@@ -37,8 +37,13 @@ export function createProgram(): Command {
     .option('-c, --config <path>', '설정 파일 경로', 'config/config.yaml')
     .option('-r, --reservation <name>', '예약 이름')
     .option('--dry-run', '실제 예약 없이 테스트', false)
+    .option('--no-headless', '브라우저 표시')
     .action(async (opts) => {
       const config = loadConfig(opts.config);
+
+      if (opts.headless === false) {
+        config.browser = { ...config.browser, headless: false } as typeof config.browser;
+      }
 
       if (!opts.reservation) {
         console.log('\n사용 가능한 예약:');

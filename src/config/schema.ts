@@ -40,6 +40,7 @@ export const ReservationSchema = z.object({
   site: z.string(),
   facility: z.string(),
   court: z.string(),
+  target_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   preferred_slots: z.array(TimeSlotSchema).min(1),
   multi_slot: z.boolean().optional(),
   prelogin_minutes: z.number().min(0).max(60).optional(),
