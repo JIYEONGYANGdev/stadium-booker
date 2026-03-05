@@ -23,10 +23,26 @@ export async function solveCaptcha(
   const cfg = { ...DEFAULT_CAPTCHA_CONFIG, ...config };
 
   logger.info('CAPTCHA 이미지 캡처 중...');
-  const captchaElement = page.locator(captchaSelector);
-  const imageBuffer = await captchaElement.screenshot();
-
   await saveScreenshot(page, 'captcha');
+
+  // 원본 이미지 URL에서 직접 다운로드 시도 (스크린샷보다 품질 좋음)
+  let imageBuffer: Buffer;
+  try {
+    const imgSrc = await page.locator(captchaSelector).getAttribute('src');
+    if (imgSrc) {
+      const imgUrl = imgSrc.startsWith('http') ? imgSrc : new URL(imgSrc, page.url()).href;
+      logger.info(`CAPTCHA 이미지 URL: ${imgUrl}`);
+      const cookies = await page.context().cookies();
+      const cookieHeader = cookies.map(c => `${c.name}=${c.value}`).join('; ');
+      const response = await fetch(imgUrl, { headers: { Cookie: cookieHeader } });
+      imageBuffer = Buffer.from(await response.arrayBuffer());
+    } else {
+      imageBuffer = await page.locator(captchaSelector).screenshot();
+    }
+  } catch {
+    logger.warn('원본 이미지 다운로드 실패, 스크린샷 사용');
+    imageBuffer = await page.locator(captchaSelector).screenshot();
+  }
 
   // 1차: Primary 엔진
   try {

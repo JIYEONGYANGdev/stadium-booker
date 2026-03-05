@@ -233,10 +233,7 @@ export class YangjuSiteAdapter extends BaseSiteAdapter {
         logger.info(`[${this.name}] 결제방식: 신용카드 선택 (text)`);
       } else {
         // 최후: JS로 직접 체크
-        await page.evaluate(() => {
-          const radio = document.querySelector('input#radioPay1') as HTMLInputElement;
-          if (radio) { radio.checked = true; radio.dispatchEvent(new Event('change')); }
-        });
+        await page.evaluate('(() => { const r = document.querySelector("input#radioPay1"); if (r) { r.checked = true; r.dispatchEvent(new Event("change")); } })()');
         logger.info(`[${this.name}] 결제방식: 신용카드 선택 (evaluate)`);
       }
     }
@@ -276,11 +273,7 @@ export class YangjuSiteAdapter extends BaseSiteAdapter {
     }
 
     // 디버깅: 현재 페이지의 시간대 버튼 목록 출력
-    const allTimes = await page.evaluate(() => {
-      return Array.from(document.querySelectorAll('button span.left'))
-        .map(el => el.textContent?.trim())
-        .filter(Boolean);
-    });
+    const allTimes = await page.evaluate('Array.from(document.querySelectorAll("button span.left")).map(el => el.textContent?.trim()).filter(Boolean)') as string[];
     logger.warn(`[${this.name}] 시간대를 찾을 수 없음: ${slot.time}`);
     logger.warn(`[${this.name}] 현재 시간대 목록: ${JSON.stringify(allTimes)}`);
     return false;

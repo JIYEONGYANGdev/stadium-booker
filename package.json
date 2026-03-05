@@ -21,6 +21,7 @@
     "inquirer": "^12.3.2",
     "node-cron": "^3.0.3",
     "playwright": "^1.50.1",
+    "sharp": "^0.34.5",
     "tesseract.js": "^5.1.1",
     "winston": "^3.17.0",
     "yaml": "^2.7.0",
