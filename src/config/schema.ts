@@ -50,8 +50,8 @@ export const ReservationSchema = z.object({
 });
 
 export const CaptchaConfigSchema = z.object({
-  primary: z.enum(['tesseract']).default('tesseract'),
-  fallback: z.enum(['tesseract']).optional(),
+  primary: z.enum(['tesseract', 'openai-vision']).default('tesseract'),
+  fallback: z.enum(['tesseract', 'openai-vision']).optional(),
   tesseract: z.object({
     lang: z.string().default('eng+kor'),
     confidence_threshold: z.number().min(0).max(100).default(70),

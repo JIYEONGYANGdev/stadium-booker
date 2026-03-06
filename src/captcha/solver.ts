@@ -1,13 +1,15 @@
 import type { Page } from 'playwright';
 import type { CaptchaConfig } from '../config/schema.js';
 import { recognizeWithTesseract, TesseractLowConfidenceError } from './tesseract.js';
+import { recognizeWithOpenAI } from './openai-vision.js';
 import { saveScreenshot } from '../utils/browser.js';
 import { logger } from '../utils/logger.js';
 import { createInterface } from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
 
 const DEFAULT_CAPTCHA_CONFIG: CaptchaConfig = {
-  primary: 'tesseract',
+  primary: 'openai-vision',
+  fallback: 'tesseract',
   tesseract: {
     lang: 'eng',
     confidence_threshold: 70,
@@ -82,7 +84,7 @@ export async function solveCaptcha(
 
 async function recognize(
   imageBuffer: Buffer,
-  engine: 'tesseract',
+  engine: 'tesseract' | 'openai-vision',
   config: CaptchaConfig,
 ): Promise<string> {
   switch (engine) {
@@ -93,6 +95,9 @@ async function recognize(
         config.tesseract?.confidence_threshold ?? 70,
       );
       return result.text;
+    }
+    case 'openai-vision': {
+      return recognizeWithOpenAI(imageBuffer);
     }
   }
 }

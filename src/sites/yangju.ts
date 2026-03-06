@@ -163,9 +163,16 @@ export class YangjuSiteAdapter extends BaseSiteAdapter {
   async refreshCaptcha(page: Page): Promise<void> {
     const reloadBtn = page.locator('button#reload');
     if (await reloadBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
+      // 현재 이미지 src 기록
+      const oldSrc = await page.locator('#captchaImage').getAttribute('src') ?? '';
       logger.info(`[${this.name}] CAPTCHA 새로고침`);
       await reloadBtn.click();
-      await page.waitForTimeout(1000);
+      // 새 이미지가 로드될 때까지 대기 (src의 rand 파라미터가 바뀜)
+      await page.waitForFunction(
+        `(() => { const img = document.querySelector('#captchaImage'); return img && img.src !== '${oldSrc}' && img.complete; })()`,
+        { timeout: 5000 },
+      ).catch(() => {});
+      await page.waitForTimeout(500);
     }
   }
 
@@ -320,13 +327,9 @@ export class YangjuSiteAdapter extends BaseSiteAdapter {
           logger.info(`[${this.name}] 예약바구니 담기 성공! (${dialogMessage})`);
           return true;
         }
-        if (/실패|오류|불가|마감|틀렸습니다/.test(dialogMessage)) {
-          logger.error(`[${this.name}] 예약 실패: ${dialogMessage}`);
-          return false;
-        }
-        // 기타 다이얼로그 (확인 메시지 등) → 일단 성공으로 간주
-        logger.info(`[${this.name}] 다이얼로그 응답: ${dialogMessage}`);
-        return true;
+        // 성공 패턴이 아니면 모두 실패로 처리
+        logger.error(`[${this.name}] 예약 실패 - 알럿: ${dialogMessage}`);
+        return false;
       }
 
       // 페이지 내 성공/실패 메시지 확인

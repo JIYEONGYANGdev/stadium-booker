@@ -352,7 +352,7 @@ export class Booker {
     site: SiteAdapter,
     captchaSelector: string,
   ): Promise<void> {
-    const attempts = 2;
+    const attempts = 5;
     for (let i = 1; i <= attempts; i++) {
       try {
         const answer = await solveCaptcha(page, captchaSelector, this.config.captcha);
