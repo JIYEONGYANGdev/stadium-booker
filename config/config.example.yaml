@@ -56,7 +56,7 @@ notification:
     on_success: true                # 예약 성공 시
     on_failure: true                # 예약 실패 시
     on_cart_added: true             # 바구니 담김 알림
-    mypage_url: "https://reserve.yjuc.or.kr/main/mypage"  # 결제 링크
+    mypage_url: "https://reserve.yjuc.or.kr/"  # 결제 링크
 
 browser:
   headless: true                    # 디버깅 시 false

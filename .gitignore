@@ -7,3 +7,6 @@ config/config.yaml
 config/.cookies-*.json
 config/kakao.tokens.json
 *.tsbuildinfo
+.DS_Store
+data/
+*.traineddata
