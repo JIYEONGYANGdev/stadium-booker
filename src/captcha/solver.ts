@@ -4,6 +4,7 @@ import { recognizeWithTesseract, TesseractLowConfidenceError } from './tesseract
 import { recognizeWithOpenAI } from './openai-vision.js';
 import { saveScreenshot } from '../utils/browser.js';
 import { logger } from '../utils/logger.js';
+import { requestRemoteCaptchaInput } from './remote-input.js';
 import { createInterface } from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
 
@@ -71,6 +72,17 @@ export async function solveCaptcha(
     }
   }
 
+  // 3차: 원격 웹 폼 입력
+  if (cfg.remote_fallback?.enabled) {
+    logger.info('원격 CAPTCHA 입력 시도...');
+    const remote = await requestRemoteCaptchaInput(imageBuffer, cfg.remote_fallback);
+    if (remote) {
+      logger.info(`원격 CAPTCHA 입력 사용: "${remote}"`);
+      return remote;
+    }
+  }
+
+  // 4차: TTY 수동 입력
   if (cfg.manual_fallback !== false) {
     const manual = await promptManualCaptcha();
     if (manual) {
@@ -118,6 +130,12 @@ export async function solveCaptchaFromBuffer(
         // ignore
       }
     }
+    // 3차: 원격 웹 폼 입력
+    if (cfg.remote_fallback?.enabled) {
+      const remote = await requestRemoteCaptchaInput(imageBuffer, cfg.remote_fallback);
+      if (remote) return remote;
+    }
+    // 4차: TTY 수동 입력
     if (cfg.manual_fallback !== false) {
       const manual = await promptManualCaptcha();
       if (manual) return manual;

@@ -115,7 +115,11 @@ async function refreshAccessToken(tokens: KakaoTokens): Promise<string> {
   return data.access_token;
 }
 
-export async function sendKakaoMessage(message: string, linkUrl?: string): Promise<boolean> {
+export async function sendKakaoMessage(
+  message: string,
+  linkUrl?: string,
+  options?: { buttonTitle?: string | null },
+): Promise<boolean> {
   const tokens = getTokens();
   let { accessToken } = tokens;
 
@@ -124,15 +128,20 @@ export async function sendKakaoMessage(message: string, linkUrl?: string): Promi
     throw new Error('카카오 메시지 링크가 없습니다. notification.kakao.mypage_url 또는 KAKAO_MYPAGE_URL을 설정하세요.');
   }
 
-  const templateObject = {
+  const templateObject: Record<string, unknown> = {
     object_type: 'text',
     text: message,
     link: {
       web_url: resolvedLink,
       mobile_web_url: resolvedLink,
     },
-    button_title: '결제하러 가기',
   };
+
+  // buttonTitle: undefined → 기본값 '결제하러 가기', string → 커스텀, null → 버튼 숨김
+  const buttonTitle = options?.buttonTitle;
+  if (buttonTitle !== null) {
+    templateObject.button_title = buttonTitle ?? '결제하러 가기';
+  }
 
   const sendRequest = async (token: string): Promise<Response> => {
     return fetch('https://kapi.kakao.com/v2/api/talk/memo/default/send', {

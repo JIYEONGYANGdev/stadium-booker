@@ -49,6 +49,14 @@ export const ReservationSchema = z.object({
   form: ReservationFormSchema,
 });
 
+export const RemoteCaptchaSchema = z.object({
+  enabled: z.boolean().default(false),
+  timeout_ms: z.number().min(30_000).max(600_000).default(180_000),
+  tunnel_provider: z.enum(['cloudflared']).default('cloudflared'),
+  subdomain: z.string().optional(),
+  notify: z.boolean().default(true),
+});
+
 export const CaptchaConfigSchema = z.object({
   primary: z.enum(['tesseract', 'openai-vision']).default('tesseract'),
   fallback: z.enum(['tesseract', 'openai-vision']).optional(),
@@ -57,6 +65,7 @@ export const CaptchaConfigSchema = z.object({
     confidence_threshold: z.number().min(0).max(100).default(70),
   }).optional(),
   manual_fallback: z.boolean().default(true),
+  remote_fallback: RemoteCaptchaSchema.optional(),
 });
 
 export const KakaoNotificationSchema = z.object({
@@ -93,6 +102,7 @@ export type RetryConfig = z.infer<typeof RetrySchema>;
 export type ReservationForm = z.infer<typeof ReservationFormSchema>;
 export type Reservation = z.infer<typeof ReservationSchema>;
 export type CaptchaConfig = z.infer<typeof CaptchaConfigSchema>;
+export type RemoteCaptchaConfig = z.infer<typeof RemoteCaptchaSchema>;
 export type NotificationConfig = z.infer<typeof NotificationSchema>;
 export type BrowserConfig = z.infer<typeof BrowserConfigSchema>;
 export type AppConfig = z.infer<typeof AppConfigSchema>;
