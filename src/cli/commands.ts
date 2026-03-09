@@ -392,6 +392,7 @@ export function createProgram(): Command {
           accessToken: data.access_token,
           refreshToken: data.refresh_token,
           restApiKey,
+          ...(clientSecret ? { clientSecret } : {}),
           updatedAt: new Date().toISOString(),
         }, null, 2));
 

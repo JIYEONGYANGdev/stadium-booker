@@ -85,46 +85,64 @@ export class YangjuSiteAdapter extends BaseSiteAdapter {
     }
   }
 
+  // 고덕풋살장 직접 URL (홈에서 "예약마감"으로 클릭 불가 시 사용)
+  private static readonly DIRECT_RESERVATION_URL =
+    'https://reserve.yjuc.or.kr/main/rent/rent_req_detail.do?gtCd=GT14000000&pptIdx=42&rdtDt=';
+
   async navigateToReservation(page: Page, target: ReservationTarget): Promise<void> {
     logger.info(`[${this.name}] 예약 페이지 이동: ${target.facility} - ${target.court}`);
 
-    // 홈이 아니면 홈으로 이동
-    if (!page.url().startsWith(this.baseUrl)) {
-      await page.goto(`${this.baseUrl}/`, { waitUntil: 'domcontentloaded' });
-    }
-    await this.dismissPopup(page);
-
-    // 시설 클릭 (예: "풋살장")
-    await this.clickWithPopupRetry(page, target.facility);
-    await page.waitForLoadState('networkidle');
-
-    // 구장 대기 후 클릭 (예: "고덕풋살장")
-    await this.clickWithPopupRetry(page, target.court);
-    await page.waitForLoadState('networkidle');
-
-    // 예약 페이지에서도 팝업이 뜰 수 있음
-    await this.dismissPopup(page);
-
-    // 날짜 선택
+    // 날짜 계산 (직접 URL 이동에도 필요하므로 먼저 계산)
     const targetDate = target.date
       ? new Date(`${target.date}T00:00:00`)
       : getNextNextWeekday(3);
     const dateValue = formatDateYYYYMMDD(targetDate);
 
-    const dateSelect = page.locator('select[title="날짜"]');
-    if (await dateSelect.isVisible({ timeout: 5000 }).catch(() => false)) {
-      logger.info(`[${this.name}] 날짜 선택: ${dateValue}`);
-      await dateSelect.selectOption({ value: dateValue });
+    // 홈 → 시설 → 구장 순서로 클릭 시도, 실패하면 직접 URL 이동
+    let navigatedDirectly = false;
+
+    try {
+      // 홈이 아니면 홈으로 이동
+      if (!page.url().startsWith(this.baseUrl)) {
+        await page.goto(`${this.baseUrl}/`, { waitUntil: 'domcontentloaded' });
+      }
+      await this.dismissPopup(page);
+
+      // 시설 클릭 (예: "풋살장")
+      await this.clickWithPopupRetry(page, target.facility);
       await page.waitForLoadState('networkidle');
-    } else {
-      // 다른 셀렉터 시도
-      const altDateSelect = page.locator('select').filter({ hasText: /\d{4}-\d{2}-\d{2}/ }).first();
-      if (await altDateSelect.isVisible({ timeout: 3000 }).catch(() => false)) {
-        logger.info(`[${this.name}] 날짜 선택 (대체): ${dateValue}`);
-        await altDateSelect.selectOption({ value: dateValue });
+
+      // 구장 클릭 시도 - "예약마감" 상태일 수 있음
+      await this.clickCourtOrFallback(page, target.court);
+      await page.waitForLoadState('networkidle');
+    } catch {
+      // 구장 클릭 실패 (예약마감 등) → 직접 URL로 이동
+      logger.warn(`[${this.name}] 홈에서 "${target.court}" 클릭 실패, 직접 URL로 이동`);
+      const directUrl = `${YangjuSiteAdapter.DIRECT_RESERVATION_URL}${dateValue}`;
+      logger.info(`[${this.name}] 직접 URL: ${directUrl}`);
+      await page.goto(directUrl, { waitUntil: 'networkidle' });
+      navigatedDirectly = true;
+    }
+
+    // 예약 페이지에서도 팝업이 뜰 수 있음
+    await this.dismissPopup(page);
+
+    // 직접 URL로 이동한 경우 날짜가 이미 URL에 포함됨, select 확인만
+    if (!navigatedDirectly) {
+      const dateSelect = page.locator('select[title="날짜"]');
+      if (await dateSelect.isVisible({ timeout: 5000 }).catch(() => false)) {
+        logger.info(`[${this.name}] 날짜 선택: ${dateValue}`);
+        await dateSelect.selectOption({ value: dateValue });
         await page.waitForLoadState('networkidle');
       } else {
-        logger.warn(`[${this.name}] 날짜 select를 찾지 못했습니다. 현재 URL: ${page.url()}`);
+        const altDateSelect = page.locator('select').filter({ hasText: /\d{4}-\d{2}-\d{2}/ }).first();
+        if (await altDateSelect.isVisible({ timeout: 3000 }).catch(() => false)) {
+          logger.info(`[${this.name}] 날짜 선택 (대체): ${dateValue}`);
+          await altDateSelect.selectOption({ value: dateValue });
+          await page.waitForLoadState('networkidle');
+        } else {
+          logger.warn(`[${this.name}] 날짜 select를 찾지 못했습니다. 현재 URL: ${page.url()}`);
+        }
       }
     }
 
@@ -133,7 +151,7 @@ export class YangjuSiteAdapter extends BaseSiteAdapter {
     await page.locator('table tr').first().waitFor({ state: 'visible', timeout: 10000 }).catch(() => {});
     await page.waitForTimeout(1000);
 
-    logger.info(`[${this.name}] 예약 페이지 도착`);
+    logger.info(`[${this.name}] 예약 페이지 도착 (날짜: ${dateValue})`);
   }
 
   async getCaptchaSelector(page: Page): Promise<string | null> {
@@ -260,10 +278,13 @@ export class YangjuSiteAdapter extends BaseSiteAdapter {
       const timeBtn = page.locator(`button:has(span.left:text-is("${timeLabel}"))`).first();
 
       if (await timeBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
-        // 마감 여부 확인 (버튼 클래스에 disabled 등)
+        // 마감 여부 확인: 버튼 클래스 또는 내부 텍스트에 "대관마감" 포함
         const btnClass = await timeBtn.getAttribute('class') ?? '';
-        if (/disabled|closed|soldout/i.test(btnClass)) {
-          logger.warn(`[${this.name}] 시간대 마감: ${slot.time} (class: ${btnClass})`);
+        const btnText = await timeBtn.textContent() ?? '';
+        const isDisabled = await timeBtn.isDisabled().catch(() => false);
+
+        if (/disabled|closed|soldout/i.test(btnClass) || /대관마감/.test(btnText) || isDisabled) {
+          logger.error(`[${this.name}] 시간대 "${slot.time}" 대관마감 (예약 불가)`);
           return false;
         }
 
@@ -279,10 +300,10 @@ export class YangjuSiteAdapter extends BaseSiteAdapter {
       }
     }
 
-    // 디버깅: 현재 페이지의 시간대 버튼 목록 출력
-    const allTimes = await page.evaluate('Array.from(document.querySelectorAll("button span.left")).map(el => el.textContent?.trim()).filter(Boolean)') as string[];
+    // 디버깅: 현재 페이지의 시간대 버튼 목록 + 상태 출력
+    const slotInfo = await page.evaluate('Array.from(document.querySelectorAll("button:has(span.left)")).map(btn => ({ time: btn.querySelector("span.left")?.textContent?.trim(), text: btn.textContent?.trim()?.substring(0, 40), disabled: btn.disabled, cls: btn.className }))') as Array<{ time: string; text: string; disabled: boolean; cls: string }>;
     logger.warn(`[${this.name}] 시간대를 찾을 수 없음: ${slot.time}`);
-    logger.warn(`[${this.name}] 현재 시간대 목록: ${JSON.stringify(allTimes)}`);
+    logger.warn(`[${this.name}] 현재 시간대 목록: ${JSON.stringify(slotInfo)}`);
     return false;
   }
 
@@ -356,6 +377,34 @@ export class YangjuSiteAdapter extends BaseSiteAdapter {
       await page.locator('#btnPopClosePopup').dispatchEvent('click');
       await popup.waitFor({ state: 'hidden', timeout: 3000 }).catch(() => {});
     }
+  }
+
+  /**
+   * 구장 클릭 시도. "예약마감" 상태이면 에러를 throw하여 직접 URL로 폴백.
+   */
+  private async clickCourtOrFallback(page: Page, courtName: string): Promise<void> {
+    await this.dismissPopup(page);
+
+    // 구장 이름이 포함된 요소 찾기 (링크, 버튼, 텍스트)
+    const courtEl = page.getByText(courtName, { exact: false }).first();
+    const visible = await courtEl.isVisible({ timeout: 5000 }).catch(() => false);
+
+    if (!visible) {
+      throw new Error(`"${courtName}" 요소를 찾을 수 없음`);
+    }
+
+    // "예약마감" 텍스트가 같은 행/카드에 있는지 확인
+    const parentText = await courtEl.evaluate(
+      '(el) => { let p = el.closest("li, tr, a, div.item, div.card"); return p ? p.textContent : el.textContent; }',
+    ).catch(() => '') as string;
+
+    if (/예약마감/.test(parentText)) {
+      logger.warn(`[${this.name}] "${courtName}" 예약마감 상태, 직접 URL로 이동`);
+      throw new Error(`"${courtName}" 예약마감`);
+    }
+
+    logger.info(`[${this.name}] "${courtName}" 클릭`);
+    await courtEl.click();
   }
 
   /**

@@ -6,6 +6,7 @@ interface KakaoTokens {
   accessToken: string;
   refreshToken?: string;
   restApiKey?: string;
+  clientSecret?: string;
 }
 
 const TOKENS_FILE = resolve('config', 'kakao.tokens.json');
@@ -33,46 +34,32 @@ function saveTokensFile(tokens: Partial<KakaoTokens>, updatedAt: string = new Da
 
 function getTokens(): KakaoTokens {
   const fileTokens = loadTokensFile();
+  // 파일 토큰이 더 최신이면 파일 우선 사용 (env는 프로세스 시작 시 고정됨)
+  const fileAccessToken = fileTokens.accessToken;
+  const fileRefreshToken = fileTokens.refreshToken;
   const envAccessToken = process.env['KAKAO_ACCESS_TOKEN'];
   const envRefreshToken = process.env['KAKAO_REFRESH_TOKEN'];
   const envRestApiKey = process.env['KAKAO_REST_API_KEY'];
+  const envClientSecret = process.env['KAKAO_CLIENT_SECRET'];
 
-  const accessToken = envAccessToken ?? fileTokens.accessToken;
+  // 파일이 env보다 최신일 수 있으므로 파일 우선
+  const accessToken = fileAccessToken ?? envAccessToken;
   if (!accessToken) {
     throw new Error(
       'KAKAO_ACCESS_TOKEN이 설정되지 않았습니다. ' +
-      '카카오 개발자 콘솔에서 토큰을 발급받으세요.'
+      '`npx stadium-booker tokens kakao-init` 를 실행하세요.'
     );
   }
 
-  const refreshToken = envRefreshToken ?? fileTokens.refreshToken;
+  const refreshToken = fileRefreshToken ?? envRefreshToken;
   const restApiKey = envRestApiKey ?? fileTokens.restApiKey;
-
-  // env에 값이 있고 파일이 없거나 값이 다른 경우 파일 저장
-  if (
-    envAccessToken ||
-    envRefreshToken ||
-    envRestApiKey
-  ) {
-    const shouldWrite =
-      envAccessToken !== undefined && envAccessToken !== fileTokens.accessToken ||
-      envRefreshToken !== undefined && envRefreshToken !== fileTokens.refreshToken ||
-      envRestApiKey !== undefined && envRestApiKey !== fileTokens.restApiKey ||
-      !existsSync(TOKENS_FILE);
-
-    if (shouldWrite) {
-      saveTokensFile({
-        accessToken,
-        refreshToken,
-        restApiKey,
-      });
-    }
-  }
+  const clientSecret = envClientSecret ?? fileTokens.clientSecret;
 
   return {
     accessToken,
     refreshToken,
     restApiKey,
+    clientSecret,
   };
 }
 
@@ -83,39 +70,47 @@ async function refreshAccessToken(tokens: KakaoTokens): Promise<string> {
 
   logger.info('카카오 Access Token 갱신 중...');
 
+  const params: Record<string, string> = {
+    grant_type: 'refresh_token',
+    client_id: tokens.restApiKey,
+    refresh_token: tokens.refreshToken,
+  };
+
+  // client_secret이 설정된 경우 포함 (카카오 앱 보안 설정에 따라 필수)
+  if (tokens.clientSecret) {
+    params['client_secret'] = tokens.clientSecret;
+  }
+
   const response = await fetch('https://kauth.kakao.com/oauth/token', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
     },
-    body: new URLSearchParams({
-      grant_type: 'refresh_token',
-      client_id: tokens.restApiKey,
-      refresh_token: tokens.refreshToken,
-    }),
+    body: new URLSearchParams(params),
   });
 
   if (!response.ok) {
-    throw new Error(`토큰 갱신 실패: ${response.status} ${response.statusText}`);
+    const errorBody = await response.text();
+    logger.error(`토큰 갱신 응답: ${errorBody}`);
+    throw new Error(`토큰 갱신 실패: ${response.status} ${response.statusText} - ${errorBody}`);
   }
 
   const data = await response.json() as { access_token: string; refresh_token?: string };
   logger.info('카카오 Access Token 갱신 완료');
 
-  // 런타임 env 업데이트
+  // 파일에 저장 (다음 실행 시 파일에서 최신 토큰 로드)
+  saveTokensFile({
+    accessToken: data.access_token,
+    refreshToken: data.refresh_token ?? tokens.refreshToken,
+    restApiKey: tokens.restApiKey,
+    clientSecret: tokens.clientSecret,
+  });
+
+  // 런타임 env도 업데이트 (현재 프로세스용)
+  process.env['KAKAO_ACCESS_TOKEN'] = data.access_token;
   if (data.refresh_token) {
     process.env['KAKAO_REFRESH_TOKEN'] = data.refresh_token;
   }
-  process.env['KAKAO_ACCESS_TOKEN'] = data.access_token;
-
-  // 파일에 저장
-  const fileTokens = loadTokensFile();
-  saveTokensFile({
-    ...fileTokens,
-    accessToken: data.access_token,
-    refreshToken: data.refresh_token ?? fileTokens.refreshToken,
-    restApiKey: tokens.restApiKey ?? fileTokens.restApiKey,
-  });
 
   return data.access_token;
 }
@@ -198,11 +193,12 @@ export function getKakaoTokenStatus(): {
   else if (hasEnv) source = 'env';
   else if (hasFile) source = 'file';
 
+  // 파일 우선 (갱신된 토큰이 파일에 저장됨)
   return {
     hasFile,
     updatedAt: fileTokens.updatedAt,
-    accessToken: maskToken(envAccessToken ?? fileTokens.accessToken),
-    refreshToken: maskToken(envRefreshToken ?? fileTokens.refreshToken),
+    accessToken: maskToken(fileTokens.accessToken ?? envAccessToken),
+    refreshToken: maskToken(fileTokens.refreshToken ?? envRefreshToken),
     restApiKey: maskToken(envRestApiKey ?? fileTokens.restApiKey),
     source,
   };
