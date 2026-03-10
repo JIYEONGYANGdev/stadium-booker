@@ -28,22 +28,24 @@ export async function solveCaptcha(
   logger.info('CAPTCHA 이미지 캡처 중...');
   await saveScreenshot(page, 'captcha');
 
-  // 원본 이미지 URL에서 직접 다운로드 시도 (스크린샷보다 품질 좋음)
+  // DOM에 이미 렌더된 이미지를 canvas로 추출 (재요청 없이 원본 그대로)
   let imageBuffer: Buffer;
   try {
-    const imgSrc = await page.locator(captchaSelector).getAttribute('src');
-    if (imgSrc) {
-      const imgUrl = imgSrc.startsWith('http') ? imgSrc : new URL(imgSrc, page.url()).href;
-      logger.info(`CAPTCHA 이미지 URL: ${imgUrl}`);
-      const cookies = await page.context().cookies();
-      const cookieHeader = cookies.map(c => `${c.name}=${c.value}`).join('; ');
-      const response = await fetch(imgUrl, { headers: { Cookie: cookieHeader } });
-      imageBuffer = Buffer.from(await response.arrayBuffer());
-    } else {
-      imageBuffer = await page.locator(captchaSelector).screenshot();
-    }
-  } catch {
-    logger.warn('원본 이미지 다운로드 실패, 스크린샷 사용');
+    const base64 = await page.locator(captchaSelector).evaluate((el) => {
+      const img = el as unknown as { naturalWidth: number; naturalHeight: number };
+      const canvas = Object.assign(el.ownerDocument.createElement('canvas'), {
+        width: img.naturalWidth,
+        height: img.naturalHeight,
+      });
+      const ctx = canvas.getContext('2d')!;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ctx.drawImage(el as any, 0, 0);
+      return canvas.toDataURL('image/png').split(',')[1];
+    });
+    imageBuffer = Buffer.from(base64, 'base64');
+    logger.info(`CAPTCHA 이미지 추출 완료 (${imageBuffer.length} bytes)`);
+  } catch (err) {
+    logger.warn('Canvas 추출 실패, 스크린샷 폴백');
     imageBuffer = await page.locator(captchaSelector).screenshot();
   }
 

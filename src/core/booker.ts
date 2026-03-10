@@ -14,6 +14,7 @@ import {
 } from '../utils/browser.js';
 import { waitUntil, getNextOpenTime, formatDateTime } from '../utils/time.js';
 import { logger } from '../utils/logger.js';
+import { uploadScreenshot } from '../utils/image-upload.js';
 import { recordSuccess, getMonthlySuccessCount } from '../history/store.js';
 
 export interface BookingResult {
@@ -245,9 +246,10 @@ export class Booker {
 
             // CAPTCHA 처리
             const captchaSelector = await site.getCaptchaSelector(page);
+            let captchaAnswer = '';
             if (captchaSelector) {
               onStage?.('captcha');
-              await this.solveCaptchaWithRetry(page, site, captchaSelector);
+              captchaAnswer = await this.solveCaptchaWithRetry(page, site, captchaSelector);
             }
 
             if (this.dryRun) {
@@ -257,7 +259,7 @@ export class Booker {
                 success: true,
                 reservation: reservation.name,
                 slot: preferredSlot,
-                message: `[DRY RUN] 슬롯 선택 성공: ${preferredSlot.day} ${preferredSlot.time}`,
+                message: `[DRY RUN] ${preferredSlot.day} ${preferredSlot.time}\nCAPTCHA 인식: "${captchaAnswer}"`,
                 timestamp: new Date(),
                 stage: 'dry_run',
                 screenshot: shot,
@@ -310,14 +312,22 @@ export class Booker {
 
     if (result.success && kakaoConfig.on_success) {
       const monthlyCount = getMonthlySuccessCount(result.timestamp);
+      const mention = process.env['KAKAO_MENTION_ID'] ? `@${process.env['KAKAO_MENTION_ID']} ` : '';
       await sendNotification(
-        `결제대기중입니다. 마이페이지 이동하여 결제하기\n\n${result.message}\n\n이번달 예약 성공: ${monthlyCount}건\n\n⏰ ${formatDateTime(result.timestamp)}`,
+        `${mention}결제대기중입니다. 마이페이지 이동하여 결제하기\n\n${result.message}\n\n이번달 예약 성공: ${monthlyCount}건\n\n⏰ ${formatDateTime(result.timestamp)}`,
         kakaoConfig.mypage_url,
       );
     } else if (!result.success && kakaoConfig.on_failure) {
+      let screenshotInfo: string | undefined;
+      if (result.screenshot) {
+        const imgurUrl = await uploadScreenshot(result.screenshot);
+        screenshotInfo = imgurUrl
+          ? `스크린샷: ${imgurUrl}`
+          : `스크린샷: ${result.screenshot}`;
+      }
       const details = [
         result.stage ? `단계: ${result.stage}` : undefined,
-        result.screenshot ? `스크린샷: ${result.screenshot}` : undefined,
+        screenshotInfo,
       ].filter(Boolean).join('\n');
       await sendNotification(
         `❌ 예약 실패\n\n${result.message}\n${details ? `\n${details}\n` : '\n'}⏰ ${formatDateTime(result.timestamp)}`,
@@ -351,13 +361,13 @@ export class Booker {
     page: Page,
     site: SiteAdapter,
     captchaSelector: string,
-  ): Promise<void> {
+  ): Promise<string> {
     const attempts = 5;
     for (let i = 1; i <= attempts; i++) {
       try {
         const answer = await solveCaptcha(page, captchaSelector, this.config.captcha);
         await site.submitCaptcha(page, answer);
-        return;
+        return answer;
       } catch (error) {
         logger.warn(`CAPTCHA 처리 실패 (시도 ${i}/${attempts}): ${error instanceof Error ? error.message : error}`);
         if (i < attempts && site.refreshCaptcha) {
@@ -366,5 +376,6 @@ export class Booker {
       }
     }
     throw new Error('CAPTCHA 처리 실패');
+    return ''; // unreachable
   }
 }

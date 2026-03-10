@@ -234,6 +234,19 @@ export async function requestRemoteCaptchaInput(
 
         if (shouldNotify) {
           try {
+            // 터널이 실제 동작하는지 헬스체크 후 알림 전송
+            let tunnelReady = false;
+            for (let hc = 0; hc < 5; hc++) {
+              try {
+                const check = await fetch(publicUrl, { signal: AbortSignal.timeout(3000) });
+                if (check.status === 200) { tunnelReady = true; break; }
+              } catch { /* retry */ }
+              await new Promise(r => setTimeout(r, 1000));
+            }
+            if (!tunnelReady) {
+              logger.warn('터널 헬스체크 실패, 알림은 전송 시도');
+            }
+
             await sendKakaoMessage(
               `[CAPTCHA 입력 필요]\n${timeoutSec}초 이내에 아래 링크를 열어 입력해주세요.\n\n${publicUrl}`,
               publicUrl,
