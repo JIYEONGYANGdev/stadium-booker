@@ -15,7 +15,7 @@ import {
 import { waitUntil, getNextOpenTime, formatDateTime } from '../utils/time.js';
 import { logger } from '../utils/logger.js';
 import { uploadScreenshot } from '../utils/image-upload.js';
-import { recordSuccess, getMonthlySuccessCount } from '../history/store.js';
+import { recordSuccess, getMonthlySuccessCount, getMonthlySuccessRecords } from '../history/store.js';
 
 export interface BookingResult {
   success: boolean;
@@ -62,8 +62,9 @@ export class Booker {
 
       const page = await context.newPage();
 
-      // 로그인
+      // 로그인 상태 확인 (쿠키 로드 후 메인 페이지로 이동해야 확인 가능)
       lastStage = 'login';
+      await page.goto(site.baseUrl, { waitUntil: 'domcontentloaded' }).catch(() => {});
       const loggedIn = await site.isLoggedIn(page).catch(() => false);
       if (!loggedIn) {
         await withRetry(
@@ -311,10 +312,16 @@ export class Booker {
     if (!kakaoConfig?.enabled) return;
 
     if (result.success && kakaoConfig.on_success) {
-      const monthlyCount = getMonthlySuccessCount(result.timestamp);
-      const mention = process.env['KAKAO_MENTION_ID'] ? `@${process.env['KAKAO_MENTION_ID']} ` : '';
+      const monthlyRecords = getMonthlySuccessRecords(result.timestamp);
+      const targetDate = this.config.reservations.find(r => r.name === result.reservation)?.target_date ?? '';
+      const slotTime = result.slot?.time ?? '';
+
+      const monthlyDetails = monthlyRecords
+        .map(r => `  ${r.timestamp.slice(0, 10)} ${r.slot_time ?? ''}`)
+        .join('\n');
+
       await sendNotification(
-        `${mention}결제대기중입니다. 마이페이지 이동하여 결제하기\n\n${result.message}\n\n이번달 예약 성공: ${monthlyCount}건\n\n⏰ ${formatDateTime(result.timestamp)}`,
+        `결제대기중입니다. 마이페이지 이동하여 결제하기\n\n예약 성공\n${targetDate} ${slotTime}\n\n이번달 예약 성공: ${monthlyRecords.length}건\n${monthlyDetails}\n\n⏰ ${formatDateTime(result.timestamp)}`,
         kakaoConfig.mypage_url,
       );
     } else if (!result.success && kakaoConfig.on_failure) {

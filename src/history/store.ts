@@ -36,6 +36,10 @@ export function recordSuccess(record: ReservationRecord): void {
 }
 
 export function getMonthlySuccessCount(date: Date = new Date()): number {
+  return getMonthlySuccessRecords(date).length;
+}
+
+export function getMonthlySuccessRecords(date: Date = new Date()): ReservationRecord[] {
   const records = loadRecords();
   const year = date.getFullYear();
   const month = date.getMonth();
@@ -43,5 +47,5 @@ export function getMonthlySuccessCount(date: Date = new Date()): number {
   return records.filter((entry) => {
     const entryDate = new Date(entry.timestamp);
     return entryDate.getFullYear() === year && entryDate.getMonth() === month;
-  }).length;
+  });
 }
