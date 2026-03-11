@@ -217,6 +217,16 @@ export async function requestRemoteCaptchaInput(
       const port = typeof addr === 'object' && addr ? addr.port : 0;
       logger.info(`원격 CAPTCHA 서버 시작: 포트 ${port}`);
 
+      // Gmail은 터널 없이도 CAPTCHA 이미지 전송 가능 → 즉시 발송
+      if (shouldNotify) {
+        sendCaptchaEmail({
+          publicUrl: '(터널 준비 중...)',
+          timeoutSec,
+          imageBase64,
+        }).then(() => logger.info('Gmail CAPTCHA 알림 즉시 전송 완료'))
+          .catch(err => logger.warn('Gmail CAPTCHA 즉시 전송 실패:', err));
+      }
+
       try {
         const { url: tunnelUrl, process: proc } = await startCloudflaredTunnel(port);
         tunnelProcess = proc;
@@ -235,7 +245,7 @@ export async function requestRemoteCaptchaInput(
 
         if (shouldNotify) {
           try {
-            // 터널이 실제 동작하는지 헬스체크 후 알림 전송
+            // 터널이 실제 동작하는지 헬스체크 후 카카오톡 + Gmail(URL 포함) 전송
             let tunnelReady = false;
             for (let hc = 0; hc < 5; hc++) {
               try {
@@ -258,7 +268,7 @@ export async function requestRemoteCaptchaInput(
                 publicUrl,
                 timeoutSec,
                 imageBase64,
-              }).then(() => logger.info('Gmail CAPTCHA 알림 전송 완료')),
+              }).then(() => logger.info('Gmail CAPTCHA 입력 링크 전송 완료')),
             ]);
           } catch (err) {
             logger.warn('CAPTCHA 알림 전송 실패:', err);
