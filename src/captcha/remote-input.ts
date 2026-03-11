@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { spawn, type ChildProcess } from 'node:child_process';
 import type { RemoteCaptchaConfig } from '../config/schema.js';
 import { sendKakaoMessage } from '../notification/kakao.js';
+import { sendCaptchaEmail } from '../notification/gmail.js';
 import { logger } from '../utils/logger.js';
 
 let lastRemoteAttemptTime = 0;
@@ -247,14 +248,20 @@ export async function requestRemoteCaptchaInput(
               logger.warn('터널 헬스체크 실패, 알림은 전송 시도');
             }
 
-            await sendKakaoMessage(
-              `[CAPTCHA 입력 필요]\n${timeoutSec}초 이내에 아래 링크를 열어 입력해주세요.\n\n${publicUrl}`,
-              publicUrl,
-              { buttonTitle: 'CAPTCHA 입력하기' },
-            );
-            logger.info('카카오톡 알림 전송 완료');
+            await Promise.allSettled([
+              sendKakaoMessage(
+                `[CAPTCHA 입력 필요]\n${timeoutSec}초 이내에 아래 링크를 열어 입력해주세요.\n\n${publicUrl}`,
+                publicUrl,
+                { buttonTitle: 'CAPTCHA 입력하기' },
+              ).then(() => logger.info('카카오톡 CAPTCHA 알림 전송 완료')),
+              sendCaptchaEmail({
+                publicUrl,
+                timeoutSec,
+                imageBase64,
+              }).then(() => logger.info('Gmail CAPTCHA 알림 전송 완료')),
+            ]);
           } catch (err) {
-            logger.warn('카카오톡 알림 전송 실패:', err);
+            logger.warn('CAPTCHA 알림 전송 실패:', err);
           }
         }
       } catch (err) {

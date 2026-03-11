@@ -4,6 +4,8 @@ import { getSiteAdapter } from '../sites/index.js';
 import type { SiteAdapter } from '../sites/base-site.js';
 import { solveCaptcha } from '../captcha/solver.js';
 import { sendNotification } from '../notification/notifier.js';
+import { createCalendarEvent } from '../notification/kakao.js';
+import { sendBookingSuccessEmail, sendBookingFailureEmail } from '../notification/gmail.js';
 import { withRetry } from './retry.js';
 import {
   launchBrowser,
@@ -309,22 +311,42 @@ export class Booker {
 
   private async notify(result: BookingResult): Promise<void> {
     const kakaoConfig = this.config.notification?.kakao;
-    if (!kakaoConfig?.enabled) return;
+    const reservation = this.config.reservations.find(r => r.name === result.reservation);
 
-    if (result.success && kakaoConfig.on_success) {
+    if (result.success) {
       const monthlyRecords = getMonthlySuccessRecords(result.timestamp);
-      const targetDate = this.config.reservations.find(r => r.name === result.reservation)?.target_date ?? '';
+      const targetDate = reservation?.target_date ?? '';
       const slotTime = result.slot?.time ?? '';
+      const facility = reservation?.facility ?? '';
+      const court = reservation?.court ?? '';
 
       const monthlyDetails = monthlyRecords
         .map(r => `  ${r.timestamp.slice(0, 10)} ${r.slot_time ?? ''}`)
         .join('\n');
 
-      await sendNotification(
-        `결제대기중입니다. 마이페이지 이동하여 결제하기\n\n예약 성공\n${targetDate} ${slotTime}\n\n이번달 예약 성공: ${monthlyRecords.length}건\n${monthlyDetails}\n\n⏰ ${formatDateTime(result.timestamp)}`,
-        kakaoConfig.mypage_url,
-      );
-    } else if (!result.success && kakaoConfig.on_failure) {
+      // 카카오톡 알림
+      if (kakaoConfig?.enabled && kakaoConfig.on_success) {
+        await sendNotification(
+          `결제대기중입니다. 마이페이지 이동하여 결제하기\n\n예약 성공\n${targetDate} ${slotTime}\n\n이번달 예약 성공: ${monthlyRecords.length}건\n${monthlyDetails}\n\n⏰ ${formatDateTime(result.timestamp)}`,
+          kakaoConfig.mypage_url,
+        );
+      }
+
+      // Gmail 알림
+      await sendBookingSuccessEmail({
+        targetDate,
+        slotTime,
+        facility,
+        court,
+        mypageUrl: kakaoConfig?.mypage_url,
+        monthlyCount: monthlyRecords.length,
+        monthlyDetails,
+        timestamp: formatDateTime(result.timestamp),
+      }).catch(e => logger.warn(`Gmail 성공 알림 실패: ${e}`));
+
+      // 톡캘린더 일정 등록
+      await this.createBookingCalendarEvent(result);
+    } else {
       let screenshotInfo: string | undefined;
       if (result.screenshot) {
         const imgurUrl = await uploadScreenshot(result.screenshot);
@@ -336,10 +358,62 @@ export class Booker {
         result.stage ? `단계: ${result.stage}` : undefined,
         screenshotInfo,
       ].filter(Boolean).join('\n');
-      await sendNotification(
-        `❌ 예약 실패\n\n${result.message}\n${details ? `\n${details}\n` : '\n'}⏰ ${formatDateTime(result.timestamp)}`,
-        kakaoConfig.mypage_url,
-      );
+
+      // 카카오톡 알림
+      if (kakaoConfig?.enabled && kakaoConfig.on_failure) {
+        await sendNotification(
+          `❌ 예약 실패\n\n${result.message}\n${details ? `\n${details}\n` : '\n'}⏰ ${formatDateTime(result.timestamp)}`,
+          kakaoConfig.mypage_url,
+        );
+      }
+
+      // Gmail 알림
+      await sendBookingFailureEmail({
+        reservationName: result.reservation,
+        errorMessage: result.message,
+        stage: result.stage,
+        screenshotUrl: screenshotInfo?.replace('스크린샷: ', ''),
+        timestamp: formatDateTime(result.timestamp),
+      }).catch(e => logger.warn(`Gmail 실패 알림 실패: ${e}`));
+    }
+  }
+
+  private async createBookingCalendarEvent(result: BookingResult): Promise<void> {
+    const reservation = this.config.reservations.find(r => r.name === result.reservation);
+    if (!reservation?.target_date || !result.slot) return;
+
+    try {
+      const [startHour, startMin] = result.slot.time.split('-')[0].split(':').map(Number);
+      const [endHour, endMin] = result.slot.time.split('-')[1].split(':').map(Number);
+
+      // multi_slot인 경우 마지막 슬롯의 종료 시간 사용
+      let finalEndHour = endHour;
+      let finalEndMin = endMin;
+      if (reservation.multi_slot && reservation.preferred_slots.length > 1) {
+        const lastSlot = reservation.preferred_slots[reservation.preferred_slots.length - 1];
+        const [lh, lm] = lastSlot.time.split('-')[1].split(':').map(Number);
+        finalEndHour = lh;
+        finalEndMin = lm;
+      }
+
+      const [year, month, day] = reservation.target_date.split('-').map(Number);
+
+      // KST → UTC (KST - 9h)
+      const startAt = new Date(Date.UTC(year, month - 1, day, startHour - 9, startMin));
+      const endAt = new Date(Date.UTC(year, month - 1, day, finalEndHour - 9, finalEndMin));
+
+      const title = reservation.form?.event_name ?? `${reservation.facility} 예약`;
+
+      await createCalendarEvent({
+        title,
+        startAt,
+        endAt,
+        description: `${reservation.facility} ${reservation.court}\n${reservation.preferred_slots.map(s => s.time).join(', ')}`,
+        location: reservation.court,
+        reminders: [2880, 660],
+      });
+    } catch (error) {
+      logger.warn(`톡캘린더 일정 등록 실패: ${error instanceof Error ? error.message : error}`);
     }
   }
 

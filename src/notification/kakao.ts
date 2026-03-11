@@ -181,6 +181,70 @@ function maskToken(value?: string): string | undefined {
   return `${value.slice(0, 4)}...${value.slice(-4)}`;
 }
 
+export interface CalendarEventParams {
+  title: string;
+  startAt: Date;
+  endAt: Date;
+  description?: string;
+  location?: string;
+  reminders?: number[];
+}
+
+export async function createCalendarEvent(params: CalendarEventParams): Promise<string | null> {
+  const tokens = getTokens();
+  let { accessToken } = tokens;
+
+  const event: Record<string, unknown> = {
+    title: params.title.slice(0, 50),
+    time: {
+      start_at: params.startAt.toISOString().replace(/\.\d{3}Z$/, 'Z'),
+      end_at: params.endAt.toISOString().replace(/\.\d{3}Z$/, 'Z'),
+      time_zone: 'Asia/Seoul',
+      all_day: false,
+      lunar: false,
+    },
+    reminders: params.reminders ?? [30],
+    color: 'GREEN',
+  };
+
+  if (params.description) {
+    event.description = params.description.slice(0, 5000);
+  }
+
+  if (params.location) {
+    event.location = { name: params.location };
+  }
+
+  const sendRequest = async (token: string): Promise<Response> => {
+    return fetch('https://kapi.kakao.com/v2/api/calendar/create/event', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams({ event: JSON.stringify(event) }),
+    });
+  };
+
+  let response = await sendRequest(accessToken);
+
+  if (response.status === 401) {
+    logger.warn('카카오 Access Token 만료, 갱신 시도...');
+    accessToken = await refreshAccessToken(tokens);
+    response = await sendRequest(accessToken);
+  }
+
+  if (!response.ok) {
+    const errorBody = await response.text();
+    logger.error(`톡캘린더 일정 생성 실패: ${response.status} - ${errorBody}`);
+    return null;
+  }
+
+  const data = await response.json() as { event_id?: string };
+  logger.info(`톡캘린더 일정 생성 완료: ${data.event_id}`);
+  return data.event_id ?? null;
+}
+
 export function getKakaoTokenStatus(): {
   hasFile: boolean;
   updatedAt?: string;
