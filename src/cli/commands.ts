@@ -344,7 +344,7 @@ export function createProgram(): Command {
         authUrl.searchParams.set('response_type', 'code');
         authUrl.searchParams.set('client_id', restApiKey);
         authUrl.searchParams.set('redirect_uri', redirectUri);
-        authUrl.searchParams.set('scope', 'talk_message,talk_calendar');
+        authUrl.searchParams.set('scope', 'talk_message,talk_calendar,friends');
 
         console.log('\n1) 아래 URL을 브라우저에서 열어 로그인하세요:');
         console.log(authUrl.toString());
