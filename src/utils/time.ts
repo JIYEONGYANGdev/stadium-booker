@@ -9,10 +9,19 @@ export function parseTimeString(time: string): { hours: number; minutes: number;
   };
 }
 
+/** year, month(0-indexed) 기준 말일 Date 반환 */
+function lastDateOfMonth(year: number, month: number): number {
+  return new Date(year, month + 1, 0).getDate();
+}
+
+export function isLastDayOfMonth(date: Date = new Date()): boolean {
+  return date.getDate() === lastDateOfMonth(date.getFullYear(), date.getMonth());
+}
+
 export function getNextOpenTime(
   type: 'monthly' | 'weekly' | 'daily',
   time: string,
-  day?: number,
+  day?: number | 'last',
   dayOfWeek?: string,
 ): Date {
   const now = new Date();
@@ -39,9 +48,20 @@ export function getNextOpenTime(
     }
     target.setDate(target.getDate() + daysUntil);
   } else if (type === 'monthly' && day !== undefined) {
-    target.setDate(day);
-    if (target <= now) {
-      target.setMonth(target.getMonth() + 1);
+    if (day === 'last') {
+      // 이번 달 말일로 세팅
+      target.setDate(lastDateOfMonth(target.getFullYear(), target.getMonth()));
+      if (target <= now) {
+        // 다음 달 말일
+        const nextMonth = target.getMonth() + 1;
+        target.setMonth(nextMonth);
+        target.setDate(lastDateOfMonth(target.getFullYear(), target.getMonth()));
+      }
+    } else {
+      target.setDate(day);
+      if (target <= now) {
+        target.setMonth(target.getMonth() + 1);
+      }
     }
   }
 
@@ -51,7 +71,7 @@ export function getNextOpenTime(
 export function toCronExpression(
   type: 'monthly' | 'weekly' | 'daily',
   time: string,
-  day?: number,
+  day?: number | 'last',
   dayOfWeek?: string,
 ): string {
   const { hours, minutes, seconds } = parseTimeString(time);
@@ -74,6 +94,11 @@ export function toCronExpression(
     case 'weekly':
       return `${seconds} ${triggerMinutes} ${triggerHours} * * ${dayMap[dayOfWeek!]}`;
     case 'monthly':
+      // 'last'는 cron이 지원하지 않으므로 28-31에 매일 트리거하고
+      // 스케줄러에서 runtime에 isLastDayOfMonth로 gate한다.
+      if (day === 'last') {
+        return `${seconds} ${triggerMinutes} ${triggerHours} 28-31 * *`;
+      }
       return `${seconds} ${triggerMinutes} ${triggerHours} ${day} * *`;
   }
 }

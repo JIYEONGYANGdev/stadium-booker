@@ -85,6 +85,10 @@ export class YangjuSiteAdapter extends BaseSiteAdapter {
     }
   }
 
+  async isOnReservationPage(page: Page): Promise<boolean> {
+    return /rent_req_detail\.do/.test(page.url());
+  }
+
   // 고덕풋살장 직접 URL (홈에서 "예약마감"으로 클릭 불가 시 사용)
   private static readonly DIRECT_RESERVATION_URL =
     'https://reserve.yjuc.or.kr/main/rent/rent_req_detail.do?gtCd=GT14000000&pptIdx=42&rdtDt=';
@@ -101,6 +105,14 @@ export class YangjuSiteAdapter extends BaseSiteAdapter {
     // 홈 → 시설 → 구장 순서로 클릭 시도, 실패하면 직접 URL 이동
     let navigatedDirectly = false;
 
+    const gotoDirectUrl = async (reason: string): Promise<void> => {
+      logger.warn(`[${this.name}] ${reason}, 직접 URL로 이동`);
+      const directUrl = `${YangjuSiteAdapter.DIRECT_RESERVATION_URL}${dateValue}`;
+      logger.info(`[${this.name}] 직접 URL: ${directUrl}`);
+      await page.goto(directUrl, { waitUntil: 'networkidle' });
+      navigatedDirectly = true;
+    };
+
     try {
       // 홈이 아니면 홈으로 이동
       if (!page.url().startsWith(this.baseUrl)) {
@@ -115,13 +127,16 @@ export class YangjuSiteAdapter extends BaseSiteAdapter {
       // 구장 클릭 시도 - "예약마감" 상태일 수 있음
       await this.clickCourtOrFallback(page, target.court);
       await page.waitForLoadState('networkidle');
-    } catch {
-      // 구장 클릭 실패 (예약마감 등) → 직접 URL로 이동
-      logger.warn(`[${this.name}] 홈에서 "${target.court}" 클릭 실패, 직접 URL로 이동`);
-      const directUrl = `${YangjuSiteAdapter.DIRECT_RESERVATION_URL}${dateValue}`;
-      logger.info(`[${this.name}] 직접 URL: ${directUrl}`);
-      await page.goto(directUrl, { waitUntil: 'networkidle' });
-      navigatedDirectly = true;
+
+      // 클릭 후 실제로 예약 상세 페이지에 도달했는지 확인
+      // 도달 실패 시 throw하여 direct URL fallback 트리거
+      if (!/rent_req_detail\.do/.test(page.url())) {
+        throw new Error(`예약 상세 페이지로 이동 실패 (현재 URL: ${page.url()})`);
+      }
+    } catch (e) {
+      // 구장 클릭 실패 또는 페이지 이동 실패 → 직접 URL로 이동
+      const reason = e instanceof Error ? e.message : '클릭 네비게이션 실패';
+      await gotoDirectUrl(reason);
     }
 
     // 예약 페이지에서도 팝업이 뜰 수 있음
@@ -141,7 +156,10 @@ export class YangjuSiteAdapter extends BaseSiteAdapter {
           await altDateSelect.selectOption({ value: dateValue });
           await page.waitForLoadState('networkidle');
         } else {
-          logger.warn(`[${this.name}] 날짜 select를 찾지 못했습니다. 현재 URL: ${page.url()}`);
+          // 날짜 select도 못 찾음 → 클릭 네비게이션이 실패한 상태
+          // direct URL로 재시도
+          await gotoDirectUrl('날짜 select를 찾지 못함');
+          await this.dismissPopup(page);
         }
       }
     }

@@ -1,10 +1,12 @@
 import type { SiteAdapter } from './base-site.js';
 import { YangjuSiteAdapter } from './yangju.js';
+import { GgShareSiteAdapter } from './ggshare.js';
 
 const registry = new Map<string, () => SiteAdapter>();
 
 // 사이트 어댑터 등록
 registry.set('yangju', () => new YangjuSiteAdapter());
+registry.set('ggshare', () => new GgShareSiteAdapter());
 
 export function getSiteAdapter(name: string): SiteAdapter {
   const factory = registry.get(name);

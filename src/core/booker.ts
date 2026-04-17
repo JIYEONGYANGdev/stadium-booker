@@ -174,7 +174,30 @@ export class Booker {
           logger.info('다중 시간대 선택 모드');
 
           onStage?.('select_slots');
-          const selected = await site.selectSlots(page, reservation.preferred_slots);
+          let selected = await site.selectSlots(page, reservation.preferred_slots);
+          let activeSlots = reservation.preferred_slots;
+
+          // 선호 시간대 실패 시 fallback 시간대로 재시도
+          if (!selected && reservation.fallback_slots && reservation.fallback_slots.length > 0) {
+            const onReservationPage = await site.isOnReservationPage(page);
+            if (!onReservationPage) {
+              throw new Error(`예약 페이지가 아닙니다 (URL: ${page.url()})`);
+            }
+
+            logger.info(
+              `선호 시간대 불가 → fallback 시간대 시도: ${reservation.fallback_slots.map(s => s.time).join(', ')}`,
+            );
+
+            // 이전 선택 상태 초기화를 위해 페이지 새로고침
+            await page.reload({ waitUntil: 'networkidle' });
+            await page.waitForTimeout(1000);
+
+            selected = await site.selectSlots(page, reservation.fallback_slots);
+            if (selected) {
+              activeSlots = reservation.fallback_slots;
+            }
+          }
+
           if (!selected) {
             throw new Error('다중 시간대 선택 실패');
           }
@@ -197,8 +220,8 @@ export class Booker {
             return {
               success: true,
               reservation: reservation.name,
-              slot: reservation.preferred_slots[0],
-              message: `[DRY RUN] 시간대 선택 성공: ${reservation.preferred_slots.map(s => s.time).join(', ')}`,
+              slot: activeSlots[0],
+              message: `[DRY RUN] 시간대 선택 성공: ${activeSlots.map(s => s.time).join(', ')}`,
               timestamp: new Date(),
               stage: 'dry_run',
               screenshot: shot,
@@ -215,15 +238,15 @@ export class Booker {
               site: reservation.site,
               facility: reservation.facility,
               court: reservation.court,
-              slot_time: reservation.preferred_slots.map(s => s.time).join(', '),
+              slot_time: activeSlots.map(s => s.time).join(', '),
               timestamp: new Date().toISOString(),
             });
 
             return {
               success: true,
               reservation: reservation.name,
-              slot: reservation.preferred_slots[0],
-              message: `예약 성공! ${reservation.facility} ${reservation.court} - ${reservation.preferred_slots.map(s => s.time).join(', ')}`,
+              slot: activeSlots[0],
+              message: `예약 성공! ${reservation.facility} ${reservation.court} - ${activeSlots.map(s => s.time).join(', ')}`,
               timestamp: new Date(),
               stage: 'add_to_cart',
               screenshot: shot,

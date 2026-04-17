@@ -15,7 +15,8 @@ export const TimeSlotSchema = z.object({
 
 export const OpenScheduleSchema = z.object({
   type: z.enum(['monthly', 'weekly', 'daily']),
-  day: z.number().min(1).max(31).optional(),
+  // 숫자 1-31 또는 'last'(말일)
+  day: z.union([z.number().min(1).max(31), z.literal('last')]).optional(),
   day_of_week: z.enum([
     'monday', 'tuesday', 'wednesday', 'thursday',
     'friday', 'saturday', 'sunday',
@@ -42,6 +43,7 @@ export const ReservationSchema = z.object({
   court: z.string(),
   target_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   preferred_slots: z.array(TimeSlotSchema).min(1),
+  fallback_slots: z.array(TimeSlotSchema).optional(),
   multi_slot: z.boolean().optional(),
   prelogin_minutes: z.number().min(0).max(60).optional(),
   open_schedule: OpenScheduleSchema,

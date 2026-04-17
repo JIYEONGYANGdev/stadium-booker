@@ -60,6 +60,9 @@ export interface SiteAdapter {
 
   /** 로그인 상태 확인 */
   isLoggedIn(page: Page): Promise<boolean>;
+
+  /** 현재 페이지가 예약 상세 페이지인지 확인 (URL 기반) */
+  isOnReservationPage(page: Page): Promise<boolean>;
 }
 
 export abstract class BaseSiteAdapter implements SiteAdapter {
@@ -98,5 +101,9 @@ export abstract class BaseSiteAdapter implements SiteAdapter {
 
   async isLoggedIn(_page: Page): Promise<boolean> {
     return false;
+  }
+
+  async isOnReservationPage(_page: Page): Promise<boolean> {
+    return true;
   }
 }

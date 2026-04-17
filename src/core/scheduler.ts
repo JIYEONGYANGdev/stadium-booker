@@ -1,7 +1,7 @@
 import cron from 'node-cron';
 import type { AppConfig, Reservation } from '../config/schema.js';
 import { Booker } from './booker.js';
-import { toCronExpression, getNextOpenTime, formatDateTime } from '../utils/time.js';
+import { toCronExpression, getNextOpenTime, formatDateTime, isLastDayOfMonth } from '../utils/time.js';
 import { logger } from '../utils/logger.js';
 
 interface ScheduledJob {
@@ -56,7 +56,15 @@ export class Scheduler {
 
     logger.info(`스케줄 등록: "${reservation.name}" - cron: ${cronExpr}`);
 
+    const requiresLastDayGate =
+      open_schedule.type === 'monthly' && open_schedule.day === 'last';
+
     const task = cron.schedule(cronExpr, async () => {
+      // 'last' 스케줄은 cron에서 28-31에 매번 트리거되므로, 실제 말일에만 실행
+      if (requiresLastDayGate && !isLastDayOfMonth()) {
+        return;
+      }
+
       logger.info(`=== 스케줄 실행: ${reservation.name} ===`);
 
       const booker = new Booker(this.config);
