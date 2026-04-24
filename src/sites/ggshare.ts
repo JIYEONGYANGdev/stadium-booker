@@ -208,10 +208,9 @@ export class GgShareSiteAdapter extends BaseSiteAdapter {
       logger.info(`[${this.name}] 모든 약관 동의 체크`);
       await page.waitForTimeout(500);
 
-      // 완료 버튼
-      const completeBtn = page
-        .locator('button:has-text("완료"), a:has-text("완료"), input[type="button"][value="완료"], input[type="submit"][value="완료"]')
-        .first();
+      // 완료 버튼 (input#oneClick1[value="완료"] — button:has-text("완료")는
+      // 숨겨진 "작성완료"(리뷰) 버튼에 먼저 매칭되므로 input만 지정)
+      const completeBtn = page.locator('input#oneClick1[value="완료"]');
       await completeBtn.waitFor({ state: 'visible', timeout: 5000 });
       logger.info(`[${this.name}] "완료" 클릭`);
       await completeBtn.click();
