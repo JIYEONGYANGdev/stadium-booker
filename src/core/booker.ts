@@ -164,6 +164,7 @@ export class Booker {
           facility: reservation.facility,
           court: reservation.court,
           date: reservation.target_date,
+          dates: reservation.target_dates,
         });
 
         // 약관 동의

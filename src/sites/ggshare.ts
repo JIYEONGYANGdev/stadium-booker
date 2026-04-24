@@ -19,6 +19,9 @@ export class GgShareSiteAdapter extends BaseSiteAdapter {
   name = 'ggshare';
   baseUrl = 'https://share.gg.go.kr';
 
+  /** navigateToReservation에서 target.dates를 받아 selectSlots에서 사용 */
+  private targetDates: string[] | undefined;
+
   async login(page: Page, credentials: Credentials): Promise<void> {
     logger.info(`[${this.name}] 로그인 시작...`);
 
@@ -117,6 +120,7 @@ export class GgShareSiteAdapter extends BaseSiteAdapter {
   async navigateToReservation(page: Page, target: ReservationTarget): Promise<void> {
     const instiCode = target.facility;
     const facilityId = target.court;
+    this.targetDates = target.dates;
     const url = `${this.baseUrl}/facilityListO/view?instiCode=${instiCode}&facilityId=${facilityId}`;
 
     logger.info(`[${this.name}] 예약 페이지 이동: ${url}`);
@@ -148,29 +152,32 @@ export class GgShareSiteAdapter extends BaseSiteAdapter {
   }
 
   /**
-   * 다음 달의 일요일 4개를 각각 클릭한 뒤, 각 일요일마다 주어진 시간대를 클릭한다.
-   * 마지막에 "예약신청" 버튼 클릭.
+   * target_dates가 지정되면 그 날짜들을, 아니면 다음 달 일요일 4개를 각각 클릭한 뒤,
+   * 각 날짜마다 주어진 시간대를 클릭한다. 마지막에 "예약신청" 버튼 클릭.
    */
   async selectSlots(page: Page, slots: TimeSlot[]): Promise<boolean> {
-    const sundays = this.getNextMonthSundays().slice(0, 4);
+    const dates =
+      this.targetDates && this.targetDates.length > 0
+        ? this.targetDates
+        : this.getNextMonthSundays().slice(0, 4);
     const timeLabels = slots.map(s => this.toTimeLabel(s.time));
-    logger.info(`[${this.name}] 대상 일요일: ${sundays.join(', ')}, 시간대: ${timeLabels.join(', ')}`);
+    logger.info(`[${this.name}] 대상 날짜: ${dates.join(', ')}, 시간대: ${timeLabels.join(', ')}`);
 
-    for (const sundayStr of sundays) {
-      const dateCell = page.locator(`td.day_${sundayStr}`).first();
+    for (const dateStr of dates) {
+      const dateCell = page.locator(`td.day_${dateStr}`).first();
       if (!(await dateCell.isVisible({ timeout: 5000 }).catch(() => false))) {
-        logger.warn(`[${this.name}] 날짜 셀을 찾을 수 없음: ${sundayStr}`);
+        logger.warn(`[${this.name}] 날짜 셀을 찾을 수 없음: ${dateStr}`);
         return false;
       }
 
-      logger.info(`[${this.name}] 날짜 클릭: ${sundayStr}`);
+      logger.info(`[${this.name}] 날짜 클릭: ${dateStr}`);
       await dateCell.click();
       await page.waitForTimeout(800);
 
       for (const label of timeLabels) {
         const ok = await this.clickTimeSlot(page, label);
         if (!ok) {
-          logger.warn(`[${this.name}] 시간대 클릭 실패: ${sundayStr} ${label}`);
+          logger.warn(`[${this.name}] 시간대 클릭 실패: ${dateStr} ${label}`);
           return false;
         }
       }

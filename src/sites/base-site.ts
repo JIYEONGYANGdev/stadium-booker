@@ -12,6 +12,8 @@ export interface ReservationTarget {
   facility: string;
   court: string;
   date?: string;
+  /** 복수 날짜 예약용 (ggshare 등) */
+  dates?: string[];
 }
 
 export interface ReservationInfo {

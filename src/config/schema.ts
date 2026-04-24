@@ -42,6 +42,8 @@ export const ReservationSchema = z.object({
   facility: z.string(),
   court: z.string(),
   target_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  // ggshare 전용: 기본 "다음 달 일요일 4개" 대신 명시적 날짜 리스트로 override
+  target_dates: z.array(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)).optional(),
   preferred_slots: z.array(TimeSlotSchema).min(1),
   fallback_slots: z.array(TimeSlotSchema).optional(),
   multi_slot: z.boolean().optional(),
