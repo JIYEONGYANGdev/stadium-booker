@@ -49,7 +49,14 @@ export class GgShareSiteAdapter extends BaseSiteAdapter {
     context.on('page', popupHandler);
 
     try {
-      await page.goto(`${this.baseUrl}/member`, { waitUntil: 'domcontentloaded' });
+      // /member 직접 goto 시 /index로 리다이렉트되므로, 홈에서 로그인 링크를 클릭해 접근
+      await page.goto(`${this.baseUrl}/`, { waitUntil: 'domcontentloaded' });
+      await page.waitForTimeout(1000);
+
+      const loginLink = page.locator('a[href*="/member"]:has-text("로그인")').first();
+      await loginLink.waitFor({ state: 'visible', timeout: 10000 });
+      await loginLink.click();
+      await page.waitForLoadState('domcontentloaded').catch(() => {});
       await page.waitForTimeout(1500);
 
       // ID/PW 입력
@@ -64,10 +71,8 @@ export class GgShareSiteAdapter extends BaseSiteAdapter {
       await pwInput.fill('');
       await pwInput.type(credentials.password, { delay: 30 });
 
-      // "로그인" 버튼 클릭
-      const loginBtn = page
-        .locator('button:has-text("로그인"), input[type="submit"][value*="로그인"], a:has-text("로그인")')
-        .first();
+      // "로그인" 제출 버튼 (페이지에 "로그인" 텍스트 다수 존재하므로 #loginBtn으로 특정)
+      const loginBtn = page.locator('button#loginBtn');
       await loginBtn.waitFor({ state: 'visible', timeout: 5000 });
       await loginBtn.click();
 
@@ -104,7 +109,7 @@ export class GgShareSiteAdapter extends BaseSiteAdapter {
 
   async isOnReservationPage(page: Page): Promise<boolean> {
     return page
-      .locator('.quickReserv-container')
+      .locator('#finalData .quickReserv-container')
       .isVisible({ timeout: 1000 })
       .catch(() => false);
   }
@@ -124,11 +129,11 @@ export class GgShareSiteAdapter extends BaseSiteAdapter {
     logger.info(`[${this.name}] "예약하기" 클릭`);
     await reserveBtn.click();
 
-    // .quickReserv-container 대기 (대기열/카운트다운이 있어도 충분한 timeout으로 대응)
+    // #finalData .quickReserv-container 대기 (대기열/카운트다운이 있어도 충분한 timeout으로 대응)
     logger.info(`[${this.name}] quickReserv-container 대기 중...`);
     await page
-      .locator('.quickReserv-container')
-      .waitFor({ state: 'visible', timeout: 120_000 });
+      .locator('#finalData .quickReserv-container')
+      .waitFor({ state: 'visible', timeout: 300_000 });
     await page.waitForTimeout(500);
     logger.info(`[${this.name}] 예약 화면 도착`);
   }
@@ -245,9 +250,9 @@ export class GgShareSiteAdapter extends BaseSiteAdapter {
   private async clickTimeSlot(page: Page, label: string): Promise<boolean> {
     // 우측 타임 리스트에서 "16:00~17:00" 같은 라벨을 가진 클릭 가능한 요소
     const candidates = [
-      page.locator(`.quickReserv-container button:has-text("${label}")`).first(),
-      page.locator(`.quickReserv-container label:has-text("${label}")`).first(),
-      page.locator(`.quickReserv-container li:has-text("${label}")`).first(),
+      page.locator(`#finalData .quickReserv-container button:has-text("${label}")`).first(),
+      page.locator(`#finalData .quickReserv-container label:has-text("${label}")`).first(),
+      page.locator(`#finalData .quickReserv-container li:has-text("${label}")`).first(),
       page.getByText(label, { exact: false }).first(),
     ];
 
